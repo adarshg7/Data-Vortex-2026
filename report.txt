@@ -1,0 +1,252 @@
+Data Vortex — Phase 1 EDA Report
+Theme: Rebuilding the Social Engine
+Submitted by: [Your Name / Team Name]
+Date: September 14, 2026
+
+-------------------------------------------------------------
+
+1. Introduction
+
+This report documents the data cleaning and exploratory analysis
+performed on the Social Engine dataset as part of Phase 1 of the
+Data Vortex competition. The goal was to restore a corrupted dataset,
+handle missing values, identify anomalies, and draw initial insights
+from the data.
+
+Two datasets were provided:
+
+  - Social_Engine_Users.csv      : User profile data
+  - Social_Engine_Posts_Corrupted.csv : Social media post activity (corrupted)
+
+-------------------------------------------------------------
+
+2. Dataset Overview
+
+Users Dataset
+  - Total rows    : 1501
+  - Total columns : 5
+  - Columns       : user_id, location, language, account_created, follower_count
+  - Condition     : Mostly clean, minor issues fixed
+
+Posts Dataset (Corrupted)
+  - Total rows    : 13035
+  - Total columns : 8
+  - Columns       : post_id, user_id, platform, text_content, timestamp,
+                    likes, shares, comments
+  - Condition     : Heavily corrupted across multiple fields
+
+-------------------------------------------------------------
+
+3. Corruption Issues Found in Posts Dataset
+
+The following types of corruption were identified:
+
+3.1 Mixed Timestamp Formats
+  Four different timestamp formats were present in the same column.
+  Some entries used Unix epoch (e.g., 1722528840), others used ISO 8601
+  with time (e.g., 2025-03-27T13:44:32), some used DD-MM-YYYY
+  (e.g., 25-09-2024), and some used a plain YYYY-MM-DD format.
+  This made direct parsing impossible without a custom handler.
+
+3.2 String NULL Values
+  The platform and likes columns contained the string "NULL" instead
+  of actual missing values. This caused the columns to be read as text
+  rather than their correct data types.
+
+3.3 Negative Likes
+  Several rows had negative values in the likes column (e.g., -4812.0).
+  No social platform allows negative engagement counts, so these were
+  treated as data entry errors.
+
+3.4 HTML Entities and Tags in Text
+  The text_content column contained raw HTML artifacts like &amp;, &lt;,
+  <div>, and <br>. These were rendering artifacts that corrupted the
+  meaning of the post text.
+
+3.5 Broken UTF-8 Encoding
+  Some text contained characters like "Ã©" which is a known result of
+  UTF-8 text being misread as Latin-1. For example, "Ã©" should be "é".
+
+3.6 Embedded Newlines in Text Fields
+  Certain posts had newline characters inside the text_content field,
+  which broke the CSV row structure and caused parsing issues.
+
+3.7 Missing Platform Values
+  A number of posts had no platform recorded, either as an empty cell
+  or as the string NULL.
+
+3.8 Missing Text Content
+  Some posts had no text at all, with the text_content field either
+  empty or absent entirely.
+
+-------------------------------------------------------------
+
+4. Cleaning Steps and Justifications
+
+Step 1 — Unified all NULL representations to NaN
+  The dataset used multiple ways to express missing data: empty cells,
+  the string "NULL", and whitespace. All of these were standardized
+  to a single representation (NaN) so pandas handles them uniformly.
+
+Step 2 — Fixed UTF-8 encoding artifacts
+  Characters like Ã© were replaced with their correct Unicode
+  equivalents using a known substitution table. This restores the
+  original intended character and is not fabrication.
+
+Step 3 — Decoded HTML entities and stripped HTML tags
+  HTML entities like &amp; were decoded to their plain text form.
+  Tags like <div> and <br> were removed using regex. This recovers
+  the clean text that was originally posted.
+
+Step 4 — Collapsed embedded newlines
+  Newline characters inside text fields were replaced with a single
+  space to preserve the text while fixing the CSV structure issue.
+
+Step 5 — Normalized timestamps to UTC ISO 8601
+  A custom parser was written to detect and handle all four timestamp
+  formats. Unix timestamps were treated as UTC seconds since epoch,
+  which is the standard for web APIs. For dates in the DD-MM-YYYY
+  format where day and month could be ambiguous, DD-MM-YYYY was assumed
+  based on the European and Asian user majority in the dataset.
+
+Step 6 — Fixed numeric fields
+  Negative likes were set to NaN and flagged. The likes, shares, and
+  comments columns were converted to nullable integer type (Int64)
+  to support missing values without losing precision.
+
+Step 7 — Standardized platform column
+  Platform values were stripped of extra whitespace and matched against
+  the five known platforms: Twitter, Instagram, Facebook, Reddit, and
+  YouTube. Values that could not be matched were left as NaN.
+
+No rows were dropped during cleaning. All issues were either fixed
+or flagged with an additional column so that the original row count
+is fully preserved.
+
+-------------------------------------------------------------
+
+5. Missing Values After Cleaning
+
+Users Dataset
+  No missing values remain after cleaning.
+
+Posts Dataset
+  platform      : missing for rows where platform could not be determined
+  text_content  : missing for posts that had no text recorded
+  timestamp     : a small number of timestamps could not be parsed
+  likes         : missing where original was NULL or negative
+
+All remaining missing values reflect genuine absence of data.
+Nothing was fabricated to fill them.
+
+-------------------------------------------------------------
+
+6. Exploratory Data Analysis
+
+6.1 Platform Distribution
+  Posts were distributed across five platforms. The distribution was
+  relatively balanced across Twitter, Instagram, Facebook, Reddit,
+  and YouTube, with no single platform dominating heavily. A small
+  percentage of posts had no platform recorded.
+
+6.2 Temporal Activity
+  Post activity spanned from mid-2024 through early 2026. Monthly
+  volume remained fairly consistent with minor peaks at certain months.
+  When broken down by day of the week, there was no strong pattern
+  suggesting posts are made uniformly across all days. Hour-of-day
+  analysis (UTC) showed activity spread across all hours, which makes
+  sense for a global user base across many time zones.
+
+6.3 Engagement Metrics
+  Likes, shares, and comments each ranged from 0 to approximately 5000.
+  Distributions were roughly uniform across this range, suggesting
+  the dataset may have been synthetically generated. Mean values were
+  in the mid-range for all three metrics. No single platform showed
+  dramatically higher engagement than others.
+
+6.4 Hashtag Analysis
+  Hashtags like Health, Fashion, Travel, and Trending were among the
+  most frequently used. Most posts contained between one and three
+  hashtags. The hashtag usage was consistent across platforms with
+  no platform showing strongly unique hashtag preferences.
+
+6.5 User Activity
+  The dataset contained a large number of unique users. Most users
+  appeared a small number of times, while a few appeared more
+  frequently. Top posting locations aligned with the user profile
+  data, with cities like London, Mumbai, São Paulo, and New York
+  appearing most often.
+
+6.6 Correlations
+  Likes, shares, and comments showed weak correlation with each other,
+  suggesting that high likes do not necessarily mean high shares or
+  comments. This is a common pattern in real social media data where
+  engagement types are driven by different user behaviors.
+
+-------------------------------------------------------------
+
+7. Anomaly Detection
+
+IQR method was used to detect outliers in likes, shares, and comments.
+Values falling below Q1 - 1.5 x IQR or above Q3 + 1.5 x IQR were
+flagged using a separate boolean column added to the cleaned dataset.
+
+Outlier rows were retained and flagged. Removing them was not
+appropriate because extreme engagement values can be legitimate,
+for example in the case of viral posts or content from large accounts.
+
+-------------------------------------------------------------
+
+8. Cross-Dataset Integrity
+
+After cleaning, post user_ids were checked against the users dataset.
+A portion of post authors did not have a matching record in the users
+table. These were flagged with a column called user_in_registry and
+retained. Possible explanations include deleted accounts, external
+data sources, or incomplete user registration records.
+
+-------------------------------------------------------------
+
+9. Cleaned Dataset Summary
+
+  Social_Engine_Users_Cleaned.csv
+    Rows    : 1501
+    Columns : 5
+    Changes : Date column parsed to datetime, duplicates checked
+
+  Social_Engine_Posts_Cleaned.csv
+    Rows    : 13035  (same as original, no rows dropped)
+    Columns : 11     (original 8 plus 3 outlier flag columns)
+    Changes : All corruption types addressed as documented above
+
+-------------------------------------------------------------
+
+10. Cleaning Assumptions
+
+  1. Unix timestamps are UTC, which is the standard for web APIs
+  2. Ambiguous DD-MM dates interpreted as DD-MM-YYYY (European convention)
+  3. Negative likes are data entry errors, set to NaN, row kept
+  4. The string NULL is equivalent to a missing value
+  5. HTML content in text fields is a rendering artifact, not intended text
+  6. Encoding artifacts corrected using a known substitution table
+  7. Empty text_content rows kept as NaN, nothing invented
+  8. Posts with unrecognized user_ids flagged and kept
+
+-------------------------------------------------------------
+
+11. Files Submitted
+
+  - Social_Engine_Users_Cleaned.csv
+  - Social_Engine_Posts_Cleaned.csv
+  - analysis.ipynb  (cleaning code with documentation)
+  - EDA_Report.txt  (this document)
+  - plot_01_missing_values.png
+  - plot_02_platform_distribution.png
+  - plot_03_temporal_analysis.png
+  - plot_04_engagement_analysis.png
+  - plot_05_hashtag_analysis.png
+  - plot_06_user_activity.png
+  - plot_07_correlation.png
+  - plot_08_anomaly_detection.png
+
+-------------------------------------------------------------
